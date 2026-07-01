@@ -1,6 +1,6 @@
 ---
 name: code-validate
-description: Use when asked to validate, review, or verify a code change — a diff, staged or unstaged changes, a branch, or a pull request — for real, evidence-backed defects. Triggers on "validate this diff", "review before I merge", "is this safe to ship", correctness-first low-false-positive review, or /code-validate. Not for style-only feedback or generating code.
+description: Use when asked to validate, review, or verify a code change — a diff, staged or unstaged changes, a branch, or a pull request — for real, evidence-backed defects. Triggers on "validate this diff", "review before I merge", "is this safe to ship", "review and comment on this PR", correctness-first low-false-positive review, or /code-validate. Not for style-only feedback or generating code.
 ---
 
 # Code Validate
@@ -68,6 +68,10 @@ For every candidate issue, before you report it:
 4. **Search for contradictory evidence** — actively look for code that disproves your hypothesis: validation elsewhere, middleware, database constraints, type guarantees, tests covering the behavior, explicitly configured framework behavior. If found, revise your conclusion.
 5. Only then report.
 
+### 4. Post to the PR (pull-request targets only)
+
+If the target is a pull request, post the results back to it after the review completes (see **Posting to the pull request** below). This is automatic for PR targets; pass `--no-comment` to only print the report instead. For non-PR targets (staged/unstaged/branch/paths), just print the report — there is nowhere to post.
+
 ## Rules
 
 - **Evidence over intuition.** No assumptions, common patterns, best guesses, framework conventions, or statistical likelihood as proof.
@@ -124,6 +128,51 @@ Readability, maintainability, architecture, performance, simplification. These a
 
 If any answer is "No", revise before reporting.
 
+## Posting to the pull request
+
+When the target is a pull request, post the results back to it automatically once the review is finalized (unless the user passed `--no-comment`). On delegated (large-PR) reviews, aggregate every subagent's findings first, then post **once** from this context — the read-only `code-validator` agent never posts itself.
+
+Post a **single review** containing one inline comment per **Verified Finding** (anchored to file + line) plus a **summary body**.
+
+### How
+
+1. Resolve the PR number and head commit (inline comments must anchor to the head SHA):
+
+   ```bash
+   gh pr view <n> --json headRefOid,headRepositoryOwner,headRepository \
+     -q '.headRefOid'
+   ```
+
+2. Build the review payload. Each Verified Finding becomes a comment on the new-file side (`side: RIGHT`); `line` **must be a line that appears in the PR diff**. Any finding whose line is not in the diff goes into the summary `body` instead — never drop it.
+
+   ```json
+   {
+     "commit_id": "<headRefOid>",
+     "event": "COMMENT",
+     "body": "### code-validate\n**2 verified findings** — 1 Critical, 1 High. See inline comments.\n\n_Findings outside the diff / Potential Improvements go here._",
+     "comments": [
+       { "path": "src/db.ts",   "line": 12, "side": "RIGHT",
+         "body": "**[Critical · High confidence] SQL injection**\nQuery built by string concatenation.\n\n_Evidence:_ `buildQuery()` L12. _Fix:_ use a parameterized query." },
+       { "path": "src/auth.ts", "line": 88, "side": "RIGHT",
+         "body": "**[High · Medium confidence] Token expiry not checked**\n_Evidence:_ `verify()` L88 — no `exp` comparison. _Fix:_ reject when `exp < now`." }
+     ]
+   }
+   ```
+
+3. Post it as one review:
+
+   ```bash
+   gh api repos/{owner}/{repo}/pulls/<n>/reviews --input payload.json
+   ```
+
+### Posting rules
+
+- **`event: COMMENT` only** — never `APPROVE` or `REQUEST_CHANGES`. The skill reports; a human decides merge state.
+- Inline comments carry **only Verified Findings**. **Potential Improvements** go in the summary body, clearly separated — never as inline blocking noise.
+- Prefix the summary with `### code-validate` so re-runs are recognizable.
+- If posting fails (no `gh`, not authenticated, not a PR, or a line cannot be anchored to the diff), **fall back to printing the full report and say so** — never silently drop findings.
+- `--no-comment` suppresses posting and prints the report instead.
+
 ## Common mistakes
 
 - Reporting the first match without tracing execution.
@@ -131,6 +180,9 @@ If any answer is "No", revise before reporting.
 - Reviewing formatting before correctness.
 - Stopping too early on a large diff instead of delegating or doing prioritized passes.
 - Presenting a stylistic preference as a defect.
+- Reviewing a PR but forgetting to post the findings back to it.
+- Anchoring an inline comment to a line not in the diff (API rejects it) instead of moving that finding to the summary body.
+- Posting Potential Improvements as inline blocking comments, or using `APPROVE`/`REQUEST_CHANGES` instead of `COMMENT`.
 
 ## Guiding principle
 

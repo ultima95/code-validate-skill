@@ -30,7 +30,11 @@ Ask your agent to validate a change, or invoke the skill directly:
 /code-validate                 # reviews staged (else unstaged) changes
 /code-validate main...HEAD     # reviews a branch/range
 /code-validate src/auth.ts     # reviews specific files
+/code-validate 42              # reviews PR #42 and posts findings as comments
+/code-validate 42 --no-comment # reviews PR #42 but only prints the report
 ```
+
+**Pull requests:** when the target is a PR, the skill posts a single review back to it — one inline comment per verified finding (anchored to file + line) plus a summary body (`event: COMMENT`, never approve/request-changes). Potential Improvements go in the summary, not as inline blocking comments. Requires an authenticated [`gh`](https://cli.github.com); on failure it falls back to printing the report. Pass `--no-comment` to skip posting.
 
 The skill:
 
@@ -38,6 +42,7 @@ The skill:
 2. Sizes the diff and routes: small changes are reviewed inline; large ones are delegated per file/subsystem (or reviewed in prioritized passes).
 3. Verifies every candidate issue — locate, trace execution, collect evidence, search for contradictory evidence — **before** reporting it.
 4. Outputs **Verified Findings** (with severity, confidence, cited evidence, impact, and a concrete fix) separately from **Potential Improvements**.
+5. If the target is a PR, posts the findings back to it as inline review comments + a summary (see below).
 
 ## Claude Code companion agent (optional)
 
