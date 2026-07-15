@@ -70,7 +70,7 @@ For every candidate issue, before you report it:
 
 ### 4. Post to the PR (pull-request targets only)
 
-If the target is a pull request, post the results back to it after the review completes (see **Posting to the pull request** below). This is automatic for PR targets; pass `--no-comment` to only print the report instead. For non-PR targets (staged/unstaged/branch/paths), just print the report — there is nowhere to post.
+If the target is a pull request, post the results back to it after the review completes (see **Posting to the pull request** below). Every posted finding must state its **root cause** (why the issue happens, tied to the code) and a concrete **fix**. This is automatic for PR targets; pass `--no-comment` to only print the report instead. For non-PR targets (staged/unstaged/branch/paths), just print the report — there is nowhere to post.
 
 ## Rules
 
@@ -107,9 +107,9 @@ For each finding:
 - **Severity** — Critical / High / Medium / Low.
 - **Confidence** — High (directly proven by code) / Medium (strong evidence, some uncertainty) / Low (partial evidence only). Never report a Low-confidence finding as a definite bug.
 - **Evidence** — File; Symbol; relevant code (with line numbers if available); execution path.
-- **Reasoning** — why the evidence proves the issue.
+- **Root cause** — the underlying mechanism: *why* it happens, tied to the code path (not just the symptom). This is what gets posted to the PR.
 - **Impact** — what can happen, under which conditions, who is affected. Avoid hypothetical disasters unsupported by code.
-- **Suggested Fix** — concrete, consistent with the existing architecture.
+- **Suggested Fix** — concrete, consistent with the existing architecture, specific enough to act on directly.
 
 ### Potential Improvements
 
@@ -132,7 +132,7 @@ If any answer is "No", revise before reporting.
 
 When the target is a pull request, post the results back to it automatically once the review is finalized (unless the user passed `--no-comment`). On delegated (large-PR) reviews, aggregate every subagent's findings first, then post **once** from this context — the read-only `code-validator` agent never posts itself.
 
-Post a **single review** containing one inline comment per **Verified Finding** (anchored to file + line) plus a **summary body**.
+Post a **single review** containing one inline comment per **Verified Finding** (anchored to file + line) plus a **summary body**. Each inline comment must explain the **root cause** and give a concrete **fix** — not just name the symptom.
 
 ### How
 
@@ -145,16 +145,18 @@ Post a **single review** containing one inline comment per **Verified Finding** 
 
 2. Build the review payload. Each Verified Finding becomes a comment on the new-file side (`side: RIGHT`); `line` **must be a line that appears in the PR diff**. Any finding whose line is not in the diff goes into the summary `body` instead — never drop it.
 
+   Each inline comment body follows the same shape: a **title line** (`[Severity · Confidence] summary`), a **Root cause** paragraph explaining *why* it happens with the code path, a **Fix** paragraph with the concrete change, and an **Evidence** line citing the symbol/lines/execution path.
+
    ```json
    {
      "commit_id": "<headRefOid>",
      "event": "COMMENT",
-     "body": "### code-validate\n**2 verified findings** — 1 Critical, 1 High. See inline comments.\n\n_Findings outside the diff / Potential Improvements go here._",
+     "body": "### code-validate\n**2 verified findings** — 1 Critical, 1 High. See inline comments for root cause + fix.\n\n_Findings outside the diff / Potential Improvements go here._",
      "comments": [
        { "path": "src/db.ts",   "line": 12, "side": "RIGHT",
-         "body": "**[Critical · High confidence] SQL injection**\nQuery built by string concatenation.\n\n_Evidence:_ `buildQuery()` L12. _Fix:_ use a parameterized query." },
+         "body": "**[Critical · High confidence] SQL injection**\n\n**Root cause:** `buildQuery()` builds the SQL by string-concatenating `req.body.id` (L12), so attacker-controlled input reaches the query unescaped.\n\n**Fix:** use a parameterized query — e.g. `db.query('… WHERE id = $1', [id])`.\n\n_Evidence:_ path `req.body.id` → `buildQuery()` L12 → `db.query()`." },
        { "path": "src/auth.ts", "line": 88, "side": "RIGHT",
-         "body": "**[High · Medium confidence] Token expiry not checked**\n_Evidence:_ `verify()` L88 — no `exp` comparison. _Fix:_ reject when `exp < now`." }
+         "body": "**[High · Medium confidence] Token expiry not checked**\n\n**Root cause:** `verify()` decodes the JWT but never compares `exp` against the current time (L88), so expired tokens are accepted on every path.\n\n**Fix:** reject the token when `exp < now` before returning the decoded payload.\n\n_Evidence:_ `verify()` L88 — no `exp` comparison in any branch." }
      ]
    }
    ```
@@ -168,6 +170,7 @@ Post a **single review** containing one inline comment per **Verified Finding** 
 ### Posting rules
 
 - **`event: COMMENT` only** — never `APPROVE` or `REQUEST_CHANGES`. The skill reports; a human decides merge state.
+- **Every inline comment states root cause + fix.** Name *why* the issue happens (the code path / mechanism, not just the symptom) and give a concrete, architecture-consistent fix. Keep the evidence citation too. A comment that only names the symptom is incomplete.
 - Inline comments carry **only Verified Findings**. **Potential Improvements** go in the summary body, clearly separated — never as inline blocking noise.
 - Prefix the summary with `### code-validate` so re-runs are recognizable.
 - If posting fails (no `gh`, not authenticated, not a PR, or a line cannot be anchored to the diff), **fall back to printing the full report and say so** — never silently drop findings.
@@ -182,6 +185,7 @@ Post a **single review** containing one inline comment per **Verified Finding** 
 - Presenting a stylistic preference as a defect.
 - Reviewing a PR but forgetting to post the findings back to it.
 - Anchoring an inline comment to a line not in the diff (API rejects it) instead of moving that finding to the summary body.
+- Posting a comment that only names the symptom, without the root cause or a concrete fix.
 - Posting Potential Improvements as inline blocking comments, or using `APPROVE`/`REQUEST_CHANGES` instead of `COMMENT`.
 
 ## Guiding principle

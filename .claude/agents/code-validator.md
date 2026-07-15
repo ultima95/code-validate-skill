@@ -370,13 +370,17 @@ High / Medium / Low
 
 Explain why the evidence proves the issue.
 
+## Root Cause
+
+State the underlying mechanism — *why* the issue happens, tied to the specific code path (not just the symptom). This is what gets surfaced when a finding is posted to a pull request.
+
 ## Impact
 
 Describe the real consequence.
 
 ## Suggested Fix
 
-Provide a concrete improvement consistent with the existing architecture.
+Provide a concrete improvement consistent with the existing architecture. Make it specific enough to act on directly.
 
 ---
 
